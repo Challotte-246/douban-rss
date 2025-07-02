@@ -43,20 +43,18 @@ jobs:
     - name: Run scraper
       run: python douban_rss.py
     
-    # 步骤6: 提交生成的RSS文件
+    # 步骤6: 提交生成的RSS文件（修复此处）
     - name: Commit RSS file
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 使用GitHub token认证
       run: |
-        # 配置Git用户信息
-        git config --global user.name 'GitHub Actions'
-        git config --global user.email 'actions@github.com'
-        
-        # 添加安全目录配置
+        # 配置Git用户信息（添加缺失的配置）
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
         git config --global --add safe.directory /home/runner/work/douban-rss/douban-rss
         
         # 检查是否有文件变化
-        if git diff --quiet; then
+        if [ -z "$(git status --porcelain)" ]; then
           echo "没有变化，跳过提交"
         else
           # 添加并提交XML文件
