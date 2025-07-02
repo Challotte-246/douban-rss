@@ -12,7 +12,7 @@ jobs:
       contents: write
       
     steps:
-    # 步骤1: 检出代码到source目录
+    # 步骤1: 检出代码
     - name: Checkout code
       uses: actions/checkout@v4
       with:
@@ -37,25 +37,25 @@ jobs:
         echo "等待 ${DELAY} 秒..."
         sleep $DELAY
     
-    # 步骤5: 运行抓取脚本（在source目录）
+    # 步骤5: 运行抓取脚本
     - name: Run scraper
-      working-directory: ./source  # 指定工作目录
+      working-directory: ./source
       run: python douban_rss.py
       
-    # 步骤6: 提交生成的RSS文件（修复路径问题）
+    # 步骤6: 提交生成的RSS文件
     - name: Commit RSS files
-      working-directory: ./source  # 关键修复：在仓库目录执行
+      working-directory: ./source
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # 配置Git用户信息
+        # 配置Git用户
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
         
-        # 添加所有XML文件
+        # 添加并提交XML文件
         git add douban_*.xml
         
-        # 检查是否有变化
+        # 检查变化并提交
         if [ -n "$(git status --porcelain)" ]; then
           git commit -m "自动更新三种RSS源 [$(date +'%Y-%m-%d %H:%M')]"
           git push origin HEAD:main
