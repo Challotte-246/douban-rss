@@ -8,47 +8,62 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # 添加权限解决安全目录问题
     permissions:
-      contents: write
+      contents: write  # 允许写入仓库
       
     steps:
-    - name: 检出代码
+    # 步骤1: 检出代码
+    - name: Checkout code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0
-        # 添加安全目录配置
+        fetch-depth: 0  # 获取完整历史记录
+        # 解决Git安全目录问题
         safe-directory: /home/runner/work/douban-rss/douban-rss
-        
-    - name: 设置Python环境
+    
+    # 步骤2: 设置Python环境
+    - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: "3.10"
-        
-    - name: 安装依赖包
+    
+    # 步骤3: 安装依赖包
+    - name: Install dependencies
       run: |
+        python -m pip install --upgrade pip
         pip install beautifulsoup4 feedgenerator requests
-        
-    - name: 添加随机延迟（防封IP）
-      run: sleep $(($RANDOM % 30 + 10))  # 延迟10-40秒
-        
-    - name: 运行抓取脚本
-      run: python douban_rss.py
-      
-    - name: 提交RSS文件
-      # 使用GITHUB_TOKEN进行认证
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    # 步骤4: 添加随机延迟（防止豆瓣封禁）
+    - name: Add random delay
       run: |
+        DELAY=$(($RANDOM % 30 + 10))
+        echo "等待 ${DELAY} 秒..."
+        sleep $DELAY
+    
+    # 步骤5: 运行抓取脚本
+    - name: Run scraper
+      run: python douban_rss.py
+    
+    # 步骤6: 提交生成的RSS文件
+    - name: Commit RSS file
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 使用GitHub token认证
+      run: |
+        # 配置Git用户信息
         git config --global user.name 'GitHub Actions'
         git config --global user.email 'actions@github.com'
+        
+        # 添加安全目录配置
         git config --global --add safe.directory /home/runner/work/douban-rss/douban-rss
         
         # 检查是否有文件变化
-        if git diff --exit-code; then
+        if git diff --quiet; then
           echo "没有变化，跳过提交"
         else
+          # 添加并提交XML文件
           git add douban_*.xml
           git commit -m "自动更新 RSS [$(date +'%Y-%m-%d %H:%M')]"
+          
+          # 推送到仓库
           git push origin HEAD:main
+          echo "已提交并推送更改"
         fi
