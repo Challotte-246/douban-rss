@@ -9,14 +9,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # 允许写入仓库
+      contents: write
       
     steps:
     # 步骤1: 检出代码
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # 获取完整历史记录
+        fetch-depth: 0
         # 解决Git安全目录问题
         safe-directory: /home/runner/work/douban-rss/douban-rss
     
@@ -25,14 +25,24 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: "3.10"
+        # 添加缓存清理
+        cache: 'pip'
+        cache-dependency-path: '**/requirements.txt'
     
-    # 步骤3: 安装依赖包
+    # 步骤3: 安装依赖包（修复此处）
     - name: Install dependencies
       run: |
+        # 清除pip缓存防止旧包影响
+        python -m pip cache purge
+        
+        # 升级pip并安装依赖
         python -m pip install --upgrade pip
-        pip install beautifulsoup4 feedgenerator requests
+        pip install beautifulsoup4 feedgenerator requests --no-cache-dir
+        
+        # 验证安装
+        pip list | grep -E "beautifulsoup4|feedgenerator|requests"
     
-    # 步骤4: 添加随机延迟（防止豆瓣封禁）
+    # 步骤4: 添加随机延迟
     - name: Add random delay
       run: |
         DELAY=$(($RANDOM % 30 + 10))
@@ -43,25 +53,22 @@ jobs:
     - name: Run scraper
       run: python douban_rss.py
     
-    # 步骤6: 提交生成的RSS文件（修复此处）
+    # 步骤6: 提交生成的RSS文件
     - name: Commit RSS file
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 使用GitHub token认证
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # 配置Git用户信息（添加缺失的配置）
+        # 配置Git用户信息
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
         git config --global --add safe.directory /home/runner/work/douban-rss/douban-rss
         
         # 检查是否有文件变化
-        if [ -z "$(git status --porcelain)" ]; then
-          echo "没有变化，跳过提交"
-        else
-          # 添加并提交XML文件
+        if [ -n "$(git status --porcelain)" ]; then
           git add douban_*.xml
           git commit -m "自动更新 RSS [$(date +'%Y-%m-%d %H:%M')]"
-          
-          # 推送到仓库
           git push origin HEAD:main
-          echo "已提交并推送更改"
+          echo "✅ 已提交并推送更改"
+        else
+          echo "🟢 没有变化，跳过提交"
         fi
