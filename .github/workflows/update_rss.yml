@@ -2,17 +2,23 @@ name: Update Douban RSS
 
 on:
   schedule:
-    - cron: "0 */4 * * *"  # 每4小时更新一次（减少豆瓣封禁风险）
+    - cron: "0 */4 * * *"  # 每4小时更新一次
   workflow_dispatch:        # 支持手动触发
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 添加权限解决安全目录问题
+    permissions:
+      contents: write
+      
     steps:
     - name: 检出代码
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # 获取完整历史记录（必须）
+        fetch-depth: 0
+        # 添加安全目录配置
+        safe-directory: /home/runner/work/douban-rss/douban-rss
         
     - name: 设置Python环境
       uses: actions/setup-python@v4
@@ -22,7 +28,6 @@ jobs:
     - name: 安装依赖包
       run: |
         pip install beautifulsoup4 feedgenerator requests
-        pip list  # 打印已安装包（调试用）
         
     - name: 添加随机延迟（防封IP）
       run: sleep $(($RANDOM % 30 + 10))  # 延迟10-40秒
@@ -31,10 +36,19 @@ jobs:
       run: python douban_rss.py
       
     - name: 提交RSS文件
+      # 使用GITHUB_TOKEN进行认证
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config --global user.name 'GitHub Actions'
         git config --global user.email 'actions@github.com'
-        git add douban_*.xml
-        # 仅当有变化时提交
-        git diff-index --quiet HEAD || git commit -m "自动更新 RSS [$(date +'%Y-%m-%d %H:%M')]"
-        git push
+        git config --global --add safe.directory /home/runner/work/douban-rss/douban-rss
+        
+        # 检查是否有文件变化
+        if git diff --exit-code; then
+          echo "没有变化，跳过提交"
+        else
+          git add douban_*.xml
+          git commit -m "自动更新 RSS [$(date +'%Y-%m-%d %H:%M')]"
+          git push origin HEAD:main
+        fi
