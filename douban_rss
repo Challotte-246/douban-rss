@@ -1,0 +1,48 @@
+# 配置参数
+GROUP_ID = "713925"  # 替换你的小组ID
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+
+def fetch_group_posts():
+    url = f"https://www.douban.com/group/{GROUP_ID}/discussion"
+    headers = {"User-Agent": USER_AGENT}
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    posts = []
+    for item in soup.select('tr[class=""]'):
+        title_link = item.select_one('td.title a')
+        if not title_link: 
+            continue
+        title = title_link.get_text(strip=True)
+        link = title_link['href']
+        time_str = item.select_one('td.time').get_text(strip=True)
+        # 转换时间格式（适配“07-02 14:30”格式）
+        post_time = datetime.strptime(f"{datetime.now().year}-{time_str}", "%Y-%m-%d %H:%M")
+        
+        posts.append({
+            "title": title,
+            "link": link,
+            "pubDate": post_time
+        })
+    return posts
+
+def generate_rss(posts):
+    feed = feedgenerator.Rss201rev2Feed(
+        title=f"豆瓣小组 {GROUP_ID} 更新",
+        link=f"https://www.douban.com/group/{GROUP_ID}",
+        description="自动抓取的小组更新"
+    )
+    
+    for post in posts:
+        feed.add_item(
+            title=post["title"],
+            link=post["link"],
+            pubdate=post["pubDate"]
+        )
+    return feed.writeString("utf-8")
+
+if __name__ == "__main__":
+    posts = fetch_group_posts()
+    rss_xml = generate_rss(posts)
+    with open(f"douban_{GROUP_ID}.xml", "w", encoding="utf-8") as f:
+        f.write(rss_xml)
