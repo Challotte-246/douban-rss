@@ -1,11 +1,11 @@
 import requests
 from bs4 import BeautifulSoup
-import feedgenerator
 import datetime
 import time
 import re
 import os
 import random
+import xml.etree.ElementTree as ET
 
 # ===== 配置区域 =====
 GROUP_ID = "713925"  # 豆瓣小组ID
@@ -17,33 +17,24 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1"
 ]
 
 # ===== 辅助函数 =====
 def get_random_user_agent():
-    """获取随机用户代理"""
     return random.choice(USER_AGENTS)
 
 def safe_request(url, headers, retry=RETRY_COUNT):
-    """带重试机制的安全请求函数"""
     for attempt in range(retry):
         try:
-            if DEBUG_MODE:
-                print(f"📡 尝试请求: {url} (第 {attempt+1}/{retry} 次尝试)")
-            
-            # 添加随机延迟防止封禁
+            print(f"📡 尝试请求: {url} (第 {attempt+1}/{retry} 次尝试)")
             delay = random.uniform(1.0, 3.0)
             time.sleep(delay)
             
             response = requests.get(url, headers=headers, timeout=15)
-            
-            if DEBUG_MODE:
-                print(f"🔄 HTTP 状态码: {response.status_code}")
+            print(f"🔄 HTTP 状态码: {response.status_code}")
             
             if response.status_code == 200:
-                if DEBUG_MODE:
-                    print("✅ 请求成功!")
+                print("✅ 请求成功!")
                 return response
                 
             print(f"⚠️ 请求失败: HTTP {response.status_code}, 第 {attempt+1} 次重试...")
@@ -53,7 +44,6 @@ def safe_request(url, headers, retry=RETRY_COUNT):
         except requests.exceptions.RequestException as e:
             print(f"❌ 请求异常: {str(e)}, 第 {attempt+1} 次重试...")
         
-        # 指数退避策略
         sleep_time = 2 ** (attempt + 1)
         print(f"💤 等待 {sleep_time} 秒后重试...")
         time.sleep(sleep_time)
@@ -61,32 +51,25 @@ def safe_request(url, headers, retry=RETRY_COUNT):
     raise Exception(f"🚫 多次请求失败: {url}")
 
 def parse_douban_time(time_str):
-    """解析豆瓣时间格式为datetime对象"""
     now = datetime.datetime.now()
-    
-    if DEBUG_MODE:
-        print(f"⏰ 原始时间字符串: '{time_str}'")
+    print(f"⏰ 原始时间字符串: '{time_str}'")
     
     try:
-        # 处理今天的时间格式（如"14:30"）
         if ':' in time_str and len(time_str) <= 5:
             parts = time_str.split(':')
             hour = int(parts[0])
             minute = int(parts[1]) if len(parts) > 1 else 0
             return datetime.datetime(now.year, now.month, now.day, hour, minute)
         
-        # 处理今年其他时间（如"07-02"）
         elif re.match(r'^\d{1,2}-\d{1,2}$', time_str):
             parts = time_str.split('-')
             month = int(parts[0])
             day = int(parts[1])
             return datetime.datetime(now.year, month, day)
         
-        # 处理往年时间（如"2024-12-31"）
         elif re.match(r'^\d{4}-\d{1,2}-\d{1,2}$', time_str):
             return datetime.datetime.strptime(time_str, "%Y-%m-%d")
         
-        # 处理带中文的时间（如"昨天 14:30"）
         elif "昨天" in time_str:
             time_part = time_str.replace("昨天", "").strip()
             if ':' in time_part:
@@ -95,7 +78,6 @@ def parse_douban_time(time_str):
                 minute = int(parts[1]) if len(parts) > 1 else 0
             else:
                 hour, minute = 0, 0
-            # 修复此处错误：datetime.timedelta → datetime.timedelta
             yesterday = now - datetime.timedelta(days=1)
             return datetime.datetime(yesterday.year, yesterday.month, yesterday.day, hour, minute)
             
@@ -107,7 +89,6 @@ def parse_douban_time(time_str):
 
 # ===== 主功能函数 =====
 def fetch_group_posts():
-    """抓取豆瓣小组帖子"""
     print(f"\n🔍 开始抓取小组 {GROUP_ID} 的讨论页面...")
     
     url = f"https://www.douban.com/group/{GROUP_ID}/discussion"
@@ -115,91 +96,75 @@ def fetch_group_posts():
     headers = {
         "User-Agent": user_agent,
         "Referer": f"https://www.douban.com/group/{GROUP_ID}/",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
     }
     
     print(f"🌐 目标URL: {url}")
     print(f"🧪 使用User-Agent: {user_agent}")
     
-    # 使用安全请求函数
     try:
         response = safe_request(url, headers)
     except Exception as e:
         print(f"🔥 抓取失败: {str(e)}")
-        return []  # 返回空列表避免后续错误
+        return []
         
-    # 解析HTML内容
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # 调试：保存HTML用于分析
-    if DEBUG_MODE:
-        with open("debug_page.html", "w", encoding="utf-8") as f:
-            f.write(soup.prettify())
-        print("📄 已保存HTML到 debug_page.html")
-    
-    # 查找帖子容器
     post_table = soup.select_one('table.olt')
     if not post_table:
         print("⚠️ 警告: 未找到帖子表格 (table.olt)")
         return []
     
     posts = []
-    # 在表格中查找帖子行（跳过标题行）
     for row in post_table.select('tr')[1:]:
         title_cell = row.select_one('td.title')
-        if not title_cell:
-            continue
+        if not title_cell: continue
             
         title_link = title_cell.find('a')
-        if not title_link:
-            continue
+        if not title_link: continue
             
-        # 提取标题和链接
         title = title_link.get_text(strip=True)
         link = title_link.get('href', '')
         
-        # 提取时间
         time_cell = row.select_one('td.time')
         time_str = time_cell.get_text(strip=True) if time_cell else "未知时间"
         
-        # 解析时间
         try:
             post_time = parse_douban_time(time_str)
-        except Exception as e:
-            print(f"❌ 时间解析错误: {str(e)}，使用当前时间")
+        except:
             post_time = datetime.datetime.now()
             
         posts.append({
             "title": title,
             "link": link,
             "pubDate": post_time,
-            "raw_time": time_str  # 保留原始时间用于调试
+            "raw_time": time_str
         })
     
     print(f"✅ 成功抓取 {len(posts)} 条帖子")
-    
-    # 按时间倒序排列（最新在前）
-    sorted_posts = sorted(posts, key=lambda x: x["pubDate"], reverse=True)
-    return sorted_posts
+    return sorted(posts, key=lambda x: x["pubDate"], reverse=True)
 
 def generate_rss(posts):
-    """生成RSS XML"""
-    feed = feedgenerator.Rss201rev2Feed(
-        title=f"豆瓣小组 {GROUP_ID} 更新",
-        link=f"https://www.douban.com/group/{GROUP_ID}",
-        description="自动抓取的小组更新",
-        language="zh-cn"
-    )
+    """手动生成RSS XML"""
+    # 创建RSS根元素
+    rss = ET.Element('rss', version='2.0')
     
+    # 创建频道
+    channel = ET.SubElement(rss, 'channel')
+    ET.SubElement(channel, 'title').text = f"豆瓣小组 {GROUP_ID} 更新"
+    ET.SubElement(channel, 'link').text = f"https://www.douban.com/group/{GROUP_ID}"
+    ET.SubElement(channel, 'description').text = "自动抓取的小组更新"
+    ET.SubElement(channel, 'language').text = "zh-cn"
+    
+    # 添加帖子项
     for post in posts:
-        feed.add_item(
-            title=post["title"],
-            link=post["link"],
-            pubdate=post["pubDate"],
-            description=f"发布于: {post['raw_time']}"
-        )
+        item = ET.SubElement(channel, 'item')
+        ET.SubElement(item, 'title').text = post['title']
+        ET.SubElement(item, 'link').text = post['link']
+        ET.SubElement(item, 'pubDate').text = post['pubDate'].strftime('%a, %d %b %Y %H:%M:%S GMT')
+        ET.SubElement(item, 'description').text = f"发布于: {post['raw_time']}"
     
-    return feed.writeString("utf-8")
+    # 生成XML字符串
+    return '<?xml version="1.0" encoding="utf-8"?>' + ET.tostring(rss, encoding='unicode')
 
 # ===== 主程序 =====
 if __name__ == "__main__":
@@ -209,21 +174,15 @@ if __name__ == "__main__":
     print("=" * 60)
     
     try:
-        # 抓取帖子
         posts = fetch_group_posts()
         
-        # 显示最新帖子
         if posts:
             print("\n📢 最新3条帖子:")
             for i, post in enumerate(posts[:3]):
                 print(f"  {i+1}. [{post['raw_time']}] {post['title']}")
-        else:
-            print("⚠️ 未抓取到任何帖子")
         
-        # 生成RSS
         rss_xml = generate_rss(posts)
         
-        # 保存到文件
         filename = f"douban_{GROUP_ID}.xml"
         with open(filename, "w", encoding="utf-8") as f:
             f.write(rss_xml)
@@ -233,9 +192,8 @@ if __name__ == "__main__":
         
     except Exception as e:
         print(f"\n🔥 严重错误: {str(e)}")
-        print("🆘 创建空RSS文件防止工作流失败...")
+        print("🆘 创建空RSS文件...")
         
-        # 创建空文件防止工作流失败
         filename = f"douban_{GROUP_ID}.xml"
         with open(filename, "w", encoding="utf-8") as f:
             f.write('<?xml version="1.0" encoding="utf-8"?>\n')
@@ -247,6 +205,5 @@ if __name__ == "__main__":
             f.write('</rss>')
         
         print(f"📁 已创建空文件: {filename}")
-        # 不重新抛出异常，让工作流继续执行提交步骤
     
     print("\n🏁 任务完成!")
