@@ -32,16 +32,10 @@ jobs:
     # 步骤3: 安装依赖包（修复此处）
     - name: Install dependencies
       run: |
-        # 清除pip缓存防止旧包影响
-        python -m pip cache purge
-        
-        # 升级pip并安装依赖
-        python -m pip install --upgrade pip
-        pip install beautifulsoup4 feedgenerator requests --no-cache-dir
-        
-        # 验证安装
-        pip list | grep -E "beautifulsoup4|feedgenerator|requests"
-    
+         python -m pip cache purge
+         python -m pip install --upgrade pip
+         pip install -r requirements.txt --no-cache-dir 
+  
     # 步骤4: 添加随机延迟
     - name: Add random delay
       run: |
