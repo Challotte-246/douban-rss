@@ -1,30 +1,81 @@
+import requests
+from bs4 import BeautifulSoup
+import feedgenerator
+from datetime import datetime
+import time  # 新增时间模块用于延迟
+import re  # 新增正则模块处理时间格式
+
 # 配置参数
 GROUP_ID = "713925"  # 替换你的小组ID
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+RETRY_COUNT = 3  # 请求失败重试次数
+
+# === 安全请求函数（新增） ===
+def safe_request(url, headers, retry=RETRY_COUNT):
+    for i in range(retry):
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                return response
+            print(f"请求失败: HTTP {response.status_code}, 第{i+1}次重试...")
+        except Exception as e:
+            print(f"请求异常: {str(e)}, 第{i+1}次重试...")
+        time.sleep(2 + i*3)  # 递增延迟（2s,5s,8s）
+    raise Exception(f"多次请求失败: {url}")
+
+# === 时间格式转换函数（新增） ===
+def parse_douban_time(time_str):
+    """转换豆瓣时间格式为datetime对象"""
+    now = datetime.now()
+    # 处理今天的时间格式（如"14:30"）
+    if ':' in time_str and len(time_str) <= 5:
+        return datetime(now.year, now.month, now.day, 
+                        int(time_str.split(':')[0]), 
+                        int(time_str.split(':')[1]))
+    # 处理今年其他时间（如"07-02"）
+    elif re.match(r'\d{2}-\d{2}', time_str):
+        return datetime(now.year, 
+                        int(time_str.split('-')[0]), 
+                        int(time_str.split('-')[1]))
+    # 处理往年时间（如"2024-12-31"）
+    elif re.match(r'\d{4}-\d{2}-\d{2}', time_str):
+        return datetime.strptime(time_str, "%Y-%m-%d")
+    else:
+        return now  # 默认返回当前时间
 
 def fetch_group_posts():
     url = f"https://www.douban.com/group/{GROUP_ID}/discussion"
     headers = {"User-Agent": USER_AGENT}
-    response = requests.get(url, headers=headers)
+    
+    # 使用安全请求函数
+    response = safe_request(url, headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     
     posts = []
-    for item in soup.select('tr[class=""]'):
+    # 更稳健的选择器（兼容豆瓣页面变化）
+    for item in soup.select('tr[class]:has(td.title)'):
         title_link = item.select_one('td.title a')
         if not title_link: 
             continue
+            
         title = title_link.get_text(strip=True)
         link = title_link['href']
-        time_str = item.select_one('td.time').get_text(strip=True)
-        # 转换时间格式（适配“07-02 14:30”格式）
-        post_time = datetime.strptime(f"{datetime.now().year}-{time_str}", "%Y-%m-%d %H:%M")
+        time_element = item.select_one('td.time')
         
+        if time_element:
+            time_str = time_element.get_text(strip=True)
+            post_time = parse_douban_time(time_str)
+        else:
+            post_time = datetime.now()  # 默认当前时间
+            
         posts.append({
             "title": title,
             "link": link,
             "pubDate": post_time
         })
-    return posts
+    
+    # 按时间倒序排列（最新在前）
+    return sorted(posts, key=lambda x: x["pubDate"], reverse=True)
 
 def generate_rss(posts):
     feed = feedgenerator.Rss201rev2Feed(
@@ -42,7 +93,19 @@ def generate_rss(posts):
     return feed.writeString("utf-8")
 
 if __name__ == "__main__":
-    posts = fetch_group_posts()
-    rss_xml = generate_rss(posts)
-    with open(f"douban_{GROUP_ID}.xml", "w", encoding="utf-8") as f:
-        f.write(rss_xml)
+    try:
+        print("开始抓取豆瓣小组数据...")
+        posts = fetch_group_posts()
+        print(f"成功抓取 {len(posts)} 条帖子")
+        
+        rss_xml = generate_rss(posts)
+        with open(f"douban_{GROUP_ID}.xml", "w", encoding="utf-8") as f:
+            f.write(rss_xml)
+        print("RSS文件生成完成！")
+        
+    except Exception as e:
+        print(f"!!! 严重错误: {str(e)}")
+        # 创建空文件防止工作流失败
+        with open(f"douban_{GROUP_ID}.xml", "w", encoding="utf-8") as f:
+            f.write('<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>豆瓣小组更新</title></channel></rss>')
+        raise  # 重新抛出异常让工作流标记为失败
