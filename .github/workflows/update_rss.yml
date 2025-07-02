@@ -2,8 +2,8 @@ name: Update Douban RSS
 
 on:
   schedule:
-    - cron: "0 */4 * * *"  # 每4小时更新一次
-  workflow_dispatch:        # 支持手动触发
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,7 +12,7 @@ jobs:
       contents: write
       
     steps:
-    # 步骤1: 检出代码
+    # 步骤1: 检出代码到source目录
     - name: Checkout code
       uses: actions/checkout@v4
       with:
@@ -37,12 +37,14 @@ jobs:
         echo "等待 ${DELAY} 秒..."
         sleep $DELAY
     
-    # 步骤5: 运行抓取脚本
+    # 步骤5: 运行抓取脚本（在source目录）
     - name: Run scraper
-      run: python source/douban_rss.py
+      working-directory: ./source  # 指定工作目录
+      run: python douban_rss.py
       
-    # 步骤6: 提交生成的RSS文件
+    # 步骤6: 提交生成的RSS文件（修复路径问题）
     - name: Commit RSS files
+      working-directory: ./source  # 关键修复：在仓库目录执行
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
