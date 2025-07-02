@@ -95,6 +95,7 @@ def parse_douban_time(time_str):
                 minute = int(parts[1]) if len(parts) > 1 else 0
             else:
                 hour, minute = 0, 0
+            # 修复此处错误：datetime.timedelta → datetime.timedelta
             yesterday = now - datetime.timedelta(days=1)
             return datetime.datetime(yesterday.year, yesterday.month, yesterday.day, hour, minute)
             
