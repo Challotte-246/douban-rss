@@ -1,25 +1,40 @@
 name: Update Douban RSS
+
 on:
   schedule:
-    - cron: "0 */6 * * *"
-  workflow_dispatch:
+    - cron: "0 */4 * * *"  # 每4小时更新一次（减少豆瓣封禁风险）
+  workflow_dispatch:        # 支持手动触发
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整历史记录（必须）
+        
+    - name: 设置Python环境
       uses: actions/setup-python@v4
       with:
         python-version: "3.10"
-    - name: Install dependencies
-      run: pip install beautifulsoup4 feedgenerator requests
-    - name: Run scraper
+        
+    - name: 安装依赖包
+      run: |
+        pip install beautifulsoup4 feedgenerator requests
+        pip list  # 打印已安装包（调试用）
+        
+    - name: 添加随机延迟（防封IP）
+      run: sleep $(($RANDOM % 30 + 10))  # 延迟10-40秒
+        
+    - name: 运行抓取脚本
       run: python douban_rss.py
-    - name: Commit RSS file
+      
+    - name: 提交RSS文件
       run: |
         git config --global user.name 'GitHub Actions'
         git config --global user.email 'actions@github.com'
         git add douban_*.xml
-        git commit -m "Update RSS feed" || echo "No changes"
+        # 仅当有变化时提交
+        git diff-index --quiet HEAD || git commit -m "自动更新 RSS [$(date +'%Y-%m-%d %H:%M')]"
         git push
